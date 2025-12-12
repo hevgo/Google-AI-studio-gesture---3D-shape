@@ -34,7 +34,8 @@ const HandController: React.FC<HandControllerProps> = ({ onHandUpdate, onClap })
   const isMounted = useRef<boolean>(true);
   
   // Interaction State Refs
-  const lastClapTime = useRef<number>(0);
+  const lastTriggerTime = useRef<number>(0);
+  const isTriggerHeld = useRef<boolean>(false);
 
   useEffect(() => {
     isMounted.current = true;
@@ -90,38 +91,43 @@ const HandController: React.FC<HandControllerProps> = ({ onHandUpdate, onClap })
       const isCurrentlyDetected = numHands > 0;
       const now = Date.now();
 
-      // --- TRIGGER: Hands Close Together (Explode & Switch) ---
-      if (numHands === 2) {
-        const hand1 = results.multiHandLandmarks[0];
-        const hand2 = results.multiHandLandmarks[1];
-        
-        // Calculate Centroids for better stability than single joint
-        const getCentroid = (landmarks: {x: number, y: number}[]) => {
-            let x = 0, y = 0;
-            for(const p of landmarks) { x += p.x; y += p.y; }
-            return { x: x / landmarks.length, y: y / landmarks.length };
-        };
+      // --- TRIGGER: Victory/Peace Gesture (Explode & Switch) ---
+      let victoryFound = false;
+      if (results.multiHandLandmarks) {
+          for (const hand of results.multiHandLandmarks) {
+              // Check for Victory Gesture (Peace Sign)
+              // Index (8) and Middle (12) Extended (Tip y < PIP y)
+              // Ring (16) and Pinky (20) Curled (Tip y > PIP y)
+              
+              if (hand.length >= 21) {
+                  const isIndexUp = hand[8].y < hand[6].y;
+                  const isMiddleUp = hand[12].y < hand[10].y;
+                  const isRingDown = hand[16].y > hand[14].y;
+                  const isPinkyDown = hand[20].y > hand[18].y;
 
-        const c1 = getCentroid(hand1);
-        const c2 = getCentroid(hand2);
-        
-        const dist = Math.hypot(c1.x - c2.x, c1.y - c2.y);
-        
-        // Logic: Hands are close together
-        // Threshold lowered to 0.12 (approx palm width overlap) for accuracy
-        const PROXIMITY_THRESHOLD = 0.12;
-        
-        if (dist < PROXIMITY_THRESHOLD) {
-            if (now - lastClapTime.current > 1000) {
-                lastClapTime.current = now;
-                onClap();
-            }
-        }
+                  // Optional: Check thumb doesn't interfere, but usually Index+Middle UP and others DOWN is enough
+                  if (isIndexUp && isMiddleUp && isRingDown && isPinkyDown) {
+                      victoryFound = true;
+                      break;
+                  }
+              }
+          }
+      }
+
+      if (victoryFound) {
+          // Debounce: 1 second cooldown
+          if (!isTriggerHeld.current && now - lastTriggerTime.current > 1000) {
+              lastTriggerTime.current = now;
+              onClap();
+              isTriggerHeld.current = true;
+          }
+      } else {
+          isTriggerHeld.current = false;
       }
 
       // --- Hand State Calculation (Control Logic) ---
       // Always uses the first detected hand for manipulation
-      if (isCurrentlyDetected) {
+      if (isCurrentlyDetected && results.multiHandLandmarks[0] && results.multiHandLandmarks[0].length >= 21) {
         const hand = results.multiHandLandmarks[0]; 
         
         // Calculate Pinch (Thumb tip vs Index tip)
@@ -258,6 +264,8 @@ const HandController: React.FC<HandControllerProps> = ({ onHandUpdate, onClap })
 
 // Helper to draw hand skeleton
 const drawHandOverlay = (ctx: CanvasRenderingContext2D, landmarks: {x:number, y:number}[], w: number, h: number) => {
+    if (!landmarks || landmarks.length < 21) return;
+
     ctx.lineWidth = 8;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';

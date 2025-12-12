@@ -75,7 +75,7 @@ const Controls: React.FC<ControlsProps> = ({
                     <div className="grid grid-cols-1 gap-1 mt-1 text-cyan-100/80 text-xs">
                          <div className="flex items-center gap-1.5">
                             <span className="w-1.5 h-1.5 bg-yellow-400 rounded-full"></span>
-                            <span><b>Bring</b> two hands together</span>
+                            <span><b>Victory (Peace)</b> gesture</span>
                          </div>
                     </div>
                 </div>

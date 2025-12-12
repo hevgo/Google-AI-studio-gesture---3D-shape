@@ -28,16 +28,14 @@ const ParticleSystem: React.FC<ParticleSystemProps> = ({
   // Initialize particles with random positions
   const currentPositions = useRef<Point3D[]>([]);
 
-  useEffect(() => {
-    // Fill current positions if empty
-    if (currentPositions.current.length === 0) {
-        currentPositions.current = new Array(COUNT).fill(0).map(() => ({
-            x: (Math.random() - 0.5) * 5,
-            y: (Math.random() - 0.5) * 5,
-            z: (Math.random() - 0.5) * 5,
-        }));
-    }
-  }, []);
+  // Synchronously initialize positions if empty to prevent race conditions in useFrame
+  if (currentPositions.current.length !== COUNT) {
+      currentPositions.current = new Array(COUNT).fill(0).map(() => ({
+          x: (Math.random() - 0.5) * 5,
+          y: (Math.random() - 0.5) * 5,
+          z: (Math.random() - 0.5) * 5,
+      }));
+  }
 
   useFrame((state) => {
     if (!meshRef.current || !groupRef.current) return;
@@ -55,6 +53,9 @@ const ParticleSystem: React.FC<ParticleSystemProps> = ({
         for (let i = 0; i < COUNT; i++) {
             const current = currentPositions.current[i];
             
+            // Safety check for current particle
+            if (!current) continue;
+
             // Deterministic variation creates a "layered" explosion effect without noise
             // (i % 10) * 0.002 gives a small spread from 0.000 to 0.018
             const variation = 1.0 + (i % 10) * 0.004; 
@@ -82,25 +83,10 @@ const ParticleSystem: React.FC<ParticleSystemProps> = ({
 
         // 1. Move Logic (Pinch)
         if (isDetected && isPinching) {
-            // Map normalized coordinates (0..1) to viewport dimensions (-width/2 .. width/2)
-            // position.x is 0 (left) to 1 (right). 
-            // viewport 0 is center. Left is +w/2 (because of mirror logic previously discussed? 
-            // Let's re-verify:
-            // MediaPipe X=0 (Left of Cam). Mirrored Canvas draws Right (1-x).
-            // We want Object on Right (+X).
-            // -(0 - 0.5) = +0.5. (+0.5 * Width) is Right Edge. Correct.
-            // MediaPipe X=1 (Right of Cam). Mirrored Canvas draws Left (1-x).
-            // We want Object on Left (-X).
-            // -(1 - 0.5) = -0.5. (-0.5 * Width) is Left Edge. Correct.
-            // Y is inverted (0 is top, 1 is bottom).
-            // -(0 - 0.5) = +0.5 (Top). Correct.
-            
             const targetX = -(position.x - 0.5) * viewport.width;
             const targetY = -(position.y - 0.5) * viewport.height;
             groupRef.current.position.lerp(new THREE.Vector3(targetX, targetY, 0), 0.15);
         } 
-        // Removed logic that resets position to (0,0,0) when not pinching.
-        // This allows the shape to stay where it was placed.
 
         // 2. Rotate Logic (Flat Palm + Movement)
         if (isDetected && !isPinching && openness > 0.6) {
@@ -123,7 +109,6 @@ const ParticleSystem: React.FC<ParticleSystemProps> = ({
         }
 
         // 3. Expand/Compress Logic
-        // When pinching (moving), we lock scale to 1.0 (Normal size) to prevent jitters/resizing.
         let targetScale = 1.0;
         if (isDetected) {
             if (isPinching) {
@@ -143,6 +128,9 @@ const ParticleSystem: React.FC<ParticleSystemProps> = ({
         for (let i = 0; i < COUNT; i++) {
             const target = targetPoints[i % targetLen] || { x: 0, y: 0, z: 0 };
             const current = currentPositions.current[i];
+
+            // Safety check
+            if (!current) continue;
 
             const tx = target.x * targetScale;
             const ty = target.y * targetScale;
